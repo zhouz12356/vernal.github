@@ -1,0 +1,286 @@
+
+Objective-C是一个强大而且非常有用的语言，但是同样也是有一点危险的。这次主题是受到Cay S. Horstmann的一篇有关C++陷阱的文章启发，我的同事Chris Denter推荐我来聊聊Objective-C和Cocoa中的陷阱。
+
+简介
+
+我将和Horstmann使用同样的定义：陷阱是能够编译、链接、运行，但却不会按你所预期地去执行的代码。他提供了一个例子，这段代码在Objective-C中和在C++中同样都是有问题的:
+
+1
+if (-0.5 <= x <= 0.5) return 0;
+肤浅地阅读这段代码可能会认为，它用来检查x是不是在[-0.5,0.5]区间内。但并不是这样的。相反，这个比较会像这样计算：
+
+1
+if ((-0.5 <= x) <= 0.5)
+在C语言中，一个比较表达式的值是一个整型，要么是0，要么是 1。这是从C没有内建的布尔类型的时候遗留下来的。所以当x和0.5相比时，结果是0或者1，而不是x的值。实际上，第二个比较执行起来就像一个相当古怪的否定操作符，也就是说这个if语句的内容只有当x比-0.5小的时候才会执行。
+
+Nil的比较
+
+Objective-C相当的与众不同，因为对nil发送消息不会发生任何事情，而是简单的返回0。基本上，在你可能遇到的每种语言中，同样的事情要么被类型系统禁止，要么就是产生一个运行时错误。这既是优点也是缺点。鉴于这个文章的主题，我们来关注下缺点。
+
+首先，我们看一个等同性的测试：
+
+1
+[nil isEqual: @"string"]
+给nil发送消息总是返回0，在这儿就相当于NO。这次恰好是正确的答案，所以看起来我们有个不错的开头！但是，看看这个：
+
+1
+[nil isEqual: nil]
+这个也是返回NO。即使参数是完全相同的值也无关紧要。参数的值到底是什么根本不重要，因为给nil发送消息不管怎样总是返回0。所以用isEqual:来判断，nil永远不会等同于任何东西，包括它自身。大多情况下这是正确的，但不总是。
+
+最后，再考虑和nil比较的另一种顺序：
+
+1
+[@"string" isEqual: nil]
+这个会怎样呢？好吧，我们无法确定。它有可能返回NO，也有可能会抛出异常，还有可能干脆崩溃。给一个没有明确告知可以接受nil为参数的方法传递nil是一个坏注意。并且，isEqual:并没有表明它可以接受nil。
+
+很多Cocoa类都包含一个compare:方法。该方法接受相同类的另一个对象作为参数，并返回NSOrderedAscending、 NSOrderedSame、NSOrderedDescending中的一个，用于表示小于、相等或者大于。
+
+如果我们把nil传给compare会发生什么事情呢？
+
+1
+[nil compare: nil]
+这会返回0，刚好和NSOrderedSame相同。与isEqual:不同，compare:认为nil和nil是相同的。真好！但是：
+
+1
+[nil compare: @"string"]
+这一样会返回NSOrderedSame，明显是错误的答案。compare:会认为nil和任何东西都相等。
+
+最终，和isEqual:一样，将nil作为参数传递给它也是个坏注意：
+
+1
+[@"string" compare: nil]
+简而言之，对nil进行比较的时候要注意点。它并不会真的正常工作。如果你的代码中有可能遇到nil，那么在你进行isEqual:和compare:之前，你最好先进行检查并对之进行单独处理。
+
+散列法
+
+你写了个很小的类用于保存一些数据，并且有很多的这个类的相等的实例，所以你实现了isEqual:方法，这样这些实例就可以被视为相等的。然后你开始将这些对象加入到一个NSSet当中，事情就开始变得奇怪了。这个集合(set)在你仅仅加入一个对象的情况下声称持有多个实例。它找不到你刚刚加入的对象。它甚至可能崩溃或者发生内存错误。
+
+这可能在你只实现了isEqual:但是没有实现hash的情况下发生。大量的Cocoa代码中要求，如果两个对象比较的结果是相等 的，那么他们应该拥有相同的哈希值。如果你只重写了isEqual:，你违背了这个要求。任何时候你重写了isEqual:，永远同时重写hash。要了 解更多的信息，可以看我的文章实现等同性和散列法(Implementing Equality and Hashing)。
+
+宏
+
+假设你在写一些单元测试。有一个方法理应返回一个数组，其中包含一个对象。于是你写了一个测试来验证它：
+
+1
+STAssertEqualObjects([obj method], @[ @"expected" ], @”Didn’t get the expected array”);
+这儿用了新的文本型语法来让它保持简短。很不错，对吧？
+
+现在我们有另一个方法返回的数组中包含两个对象，于是我们为之写了这样一个测试：
+
+1
+STAssertEqualObjects([obj methodTwo], @[ @"expected1", @"expected2" ], @”Didn’t get the expected array”);
+突然，代码无法通过编译，并且产生一堆十分奇怪的错误。这是怎么回事？
+
+问题在于STAssertEqualObjects是个宏。宏是由预处理器展开的，并且预处理器是个古老的、相当愚蠢的程序，它不知道任何的现代Objective-C语法，或者现代C语法。预处理器按照逗号将宏参数分割开。它足够聪明，知道括号是可以递归的，所以这个宏被它视作三个参数：
+
+1
+Macro(a, (b, c), d)
+这里第一个参数是a，第二个是(b,c)，然后第三个是d。但是，预处理器不知道它需要对[]和{}做相同的处理。之前的那个宏，预处理器看到的是四个参数：
+
+·[obj methodTwo]
+
+·@[ @”expected1″
+
+·@”expected2 ]
+
+·@”Didn’t get the expected array”
+
+这个结果完全是代码碎片，不仅不能编译，而且还迷惑了编译器，使之无法提供可理解的诊断信息。一旦知道了问题在哪里，解决方法很简单了。只要将那些文本用括号括起来，这样预处理器就会把它当作一个参数了：
+
+1
+STAssertEqualObjects([obj methodTwo], (@[ @"expected1", @"expected2" ]), @”Didn’t get the expected array”);
+单元测试是我最经常遇到的，但是它随时都有可能突然冒出来一个宏。Objective-C文本会成为受害者，C的复合文本(C compound literals)也是。如果你在block中使用逗号，尽管很少遇到，但是是合法的，那么也可能出问题。你会发现Apple在Block_copy和 Block_release宏中已经考虑到了这个问题，这两个宏在/usr/include/Block.h中：
+
+1
+2
+#define Block_copy(…) ((__typeof(__VA_ARGS__))_Block_copy((const void *)(__VA_ARGS__)))
+#define Block_release(…) _Block_release((const void *)(__VA_ARGS__))
+这些宏理论上只接受单一的参数，但它们被声明成接受可变参数以避免这个问题。通过接受…作为参数，并使用__VA_ARGS__来指代参数，带逗号的“多参数”被复制到了宏的输出。你可以用相同的方法让自己的宏避免这个问题，尽管它只对多参数宏的最后一个参数有效。
+
+属性合成(Property Synthesis)
+
+看下面这个类：
+
+1
+2
+3
+4
+5
+6
+7
+8
+@interface MyClass : NSObject {
+NSString *_myIvar;
+}
+@property (copy) NSString *myIvar;
+@end
+@implementation MyClass
+@synthesize myIvar;
+@end
+没什么问题，是吗？ivar的声明和@synthesize在现在有点多余，但是没有关系。
+
+很不幸，这段代码会默默的忽略掉_myIvar并且合成一个新的不带前缀下划线的变量myIvar。如果你的代码中直接使用了ivar，它的值会和代码中直接使用属性的值不一样。很混乱！
+
+@synthesize合成的变量名字的规则有点怪异。如果你通过 @synthesize myIvar = _myIvar;来指定变量名字，那么当然它用的是你所指定的任何名字。如果你没有指定变量名，那么它会合成一个与属性名相同名字的变量。如果你干脆连@synthesize也一起省略了，那么它会合成一个名字和属性名相同，但是带一个前缀下划线的变量。
+
+除非你需要支持32位的Mac，你现在最好的选择就是避免显示地为属性声明对应的变量。让@synthesize创建该变量，并且如果你搞错了名字，你会得到一个好的编译警告，而不是难以理解的行为。
+
+被中断的系统调用
+
+Cocoa代码一般坚持使用高级结构，但有时需要降低一些来处理POSIX时也很实用。例如，这些代码会向一个文件描述符中写入一些数据：
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+int fd;
+NSData *data = …;
+const char *cursor = [data bytes];
+NSUInteger remaining = [data length];
+while(remaining > 0) {
+ssize_t result = write(fd, cursor, remaining);
+if(result < 0)
+{
+NSLog(@”Failed to write data: %s (%d)”, strerror(errno), errno);
+return;
+}
+remaining -= result;
+cursor += result;
+}
+但是，这可能会失败，它失败的方式会很奇怪，并且是间歇性的。像这样的POSIX调用是可以被信号打断的。即使是应用当中在其他地 方处理的无害的信号，例如SIGCHLD、SIGINFO，都会导致这种情况发生。如果你使用了NSTask或者进行多线程的工作，SIGCHLD就会产 生。当write被信号打断的时候，它会返回－1，并且将errno设置为EINTR来表示这个调用被中断。上述代码将所有错误都当作是致命的，并往外 跳，尽管它仅仅是需要被重新调用。正确的代码应该单独检查这种情况，并重试该调用：
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+while(remaining > 0) {
+ssize_t result = write(fd, cursor, remaining);
+if(result < 0 && errno == EINTR)
+{
+continue;
+}
+else if(result < 0)
+{
+NSLog(@”Failed to write data: %s (%d)”, strerror(errno), errno);
+return;
+}
+remaining -= result;
+cursor += result;
+}
+字符串长度
+
+相同的字符串，用不同的方式表示，会有不同的长度。这个是相当常见的但是确实有错的样例：
+
+write(fd, [string UTF8String], [string length]);
+
+这个问题在于当write需要一个字节数的时候，NSString是以utf-16编码为单位计算长度的。仅当字符串中只包含 ASCII字符的时候，这两个数才会相等（这就是为什么人们如此经常写这种错误代码却能侥幸无事）。当字符串中一旦包含非ASCII字符，例如重音字符， 它们就不再相等。请一直使用相同的表示法来计算你正在操作的字符串长度：
+
+1
+2
+const char *cStr = [string UTF8String];
+write(fd, cStr, strlen(cStr));
+强制转换成BOOL类型
+
+看下这段用于检查一个对象指针是否是空的代码：
+
+1
+2
+3
+4
+- (BOOL)hasObject
+{
+return (BOOL)_object;
+}
+一般来说，它能正常工作。但，大概6％的概率，它会在_object不为nil的情况下返回NO。出什么事了？
+
+BOOL，很不幸，它不是布尔类型。这是它的定义：
+
+1
+typedef signed char BOOL;
+这是另一个很不幸的从C没有布尔类型的时候遗留下来的问题。Cocoa早在C99的_Bool出现前，将它自己的“布尔“类型定义 为signed char，也就是一个8位的整数。当你将一个指针转转为整型时，你将得到指针本身的数值。当你将指针转换成小整型的时候，那么你将得到指针的低位部分的数 值。当指针看起来像这样：
+
+1
+….110011001110000
+转成BOOL就会得到：
+
+1
+01110000
+这个值非0，也就是说它是被正确计算的。那么问题是什么？问题在于如果指针看起来像这样：
+
+1
+….110011000000000
+那么转成BOOL就会得到：
+
+1
+00000000
+这个值是0，也就是NO，即使指针本身不是nil。啊哦！
+
+这个发生的频率有多高？BOOL类型有256个可能的值，而NO只占其中一个。所以我们可以简单的假设它发生的概率是1/256。但Objective-C的对象在分配内存的时候是对齐的，一般来说是16位对齐。也就是说指针的最低4位一直都是0（有些地方会利用它们来对指针进行标记），故转换成BOOL后，只有4位的值是会变化的。那么所有位都为0的可能性就变成了1/16，也就是大概6%。
+
+安全的实现这个方法，需要和nil进行一个显示的对比：
+
+1
+2
+3
+4
+- (BOOL)hasObject
+{
+return _object != nil;
+}
+如果你想耍点小聪明，并使代码变得难以阅读，可以连续使用两次!操作符。!!结构有时被称为C语言的布尔转换操作符，虽然这只是它的一部分功能。
+
+1
+2
+3
+4
+- (BOOL)hasObject
+{
+return !!_object;
+}
+倒数第一个!根据_object是否为nil产生一个1或者0的值。第二个!再将它转为正确的值，如果_object为nil，则产生1，否则产生0。
+
+你应该坚持使用!= nil的版本。
+
+丢失的方法参数
+
+假设你正在实现一个表格视图的数据源。你将这个加入到你的类的方法中：
+
+1
+2
+3
+4
+- (id)tableView:(NSTableView *) objectValueForTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
+{
+return [dataArray objectAtIndex: rowIndex];
+}
+于是开始运行应用，然后NSTableView开始抱怨说你没有实现这个方法。但是它明明就在那儿！
+
+像往常一样，计算机是正确的。计算机是你的朋友。
+
+认真点看，第一个参数丢失了。为什么这样也能编译呢？
+
+原因在于Objective-C允许空的选择符部分。上面声明的并不是一个丢失了一个参数的名叫 tableView:objectValueForTableColumn:row: 的方法。而是声明了名叫 tableView::row: 的方法，并且它的第一个参数名叫objectValueForTableColumn. 这是一个相当不愉快的方法来键入一个方法的名字，并且如果你在一个编译器无法提示你方法丢失的情况下犯了这个错，你可能就要花上相当长的时间用于调试这个 问题。
+
+总结
+
+Objective-C和Cocoa给大意的程序员准备了相当多的陷阱。上面的只是个示例罢了。但是它的确是一个好的问题清单，列出了那些需要被注意的问题。
