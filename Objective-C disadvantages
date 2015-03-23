@@ -101,14 +101,6 @@ STAssertEqualObjects([obj methodTwo], (@[ @"expected1", @"expected2" ]), @”Did
 
 看下面这个类：
 
-1
-2
-3
-4
-5
-6
-7
-8
 @interface MyClass : NSObject {
 NSString *_myIvar;
 }
@@ -129,20 +121,6 @@ NSString *_myIvar;
 
 Cocoa代码一般坚持使用高级结构，但有时需要降低一些来处理POSIX时也很实用。例如，这些代码会向一个文件描述符中写入一些数据：
 
-1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
 int fd;
 NSData *data = …;
 const char *cursor = [data bytes];
@@ -195,18 +173,12 @@ write(fd, [string UTF8String], [string length]);
 
 这个问题在于当write需要一个字节数的时候，NSString是以utf-16编码为单位计算长度的。仅当字符串中只包含 ASCII字符的时候，这两个数才会相等（这就是为什么人们如此经常写这种错误代码却能侥幸无事）。当字符串中一旦包含非ASCII字符，例如重音字符， 它们就不再相等。请一直使用相同的表示法来计算你正在操作的字符串长度：
 
-1
-2
 const char *cStr = [string UTF8String];
 write(fd, cStr, strlen(cStr));
 强制转换成BOOL类型
 
 看下这段用于检查一个对象指针是否是空的代码：
 
-1
-2
-3
-4
 - (BOOL)hasObject
 {
 return (BOOL)_object;
@@ -239,20 +211,12 @@ typedef signed char BOOL;
 
 安全的实现这个方法，需要和nil进行一个显示的对比：
 
-1
-2
-3
-4
 - (BOOL)hasObject
 {
 return _object != nil;
 }
 如果你想耍点小聪明，并使代码变得难以阅读，可以连续使用两次!操作符。!!结构有时被称为C语言的布尔转换操作符，虽然这只是它的一部分功能。
 
-1
-2
-3
-4
 - (BOOL)hasObject
 {
 return !!_object;
@@ -265,10 +229,6 @@ return !!_object;
 
 假设你正在实现一个表格视图的数据源。你将这个加入到你的类的方法中：
 
-1
-2
-3
-4
 - (id)tableView:(NSTableView *) objectValueForTableColumn:(NSTableColumn *)aTableColumn row:(NSInteger)rowIndex
 {
 return [dataArray objectAtIndex: rowIndex];
