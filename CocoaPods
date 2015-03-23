@@ -1,0 +1,52 @@
+1. 简介
+CocoaPods是一个负责管理iOS项目中第三方开源代码的工具，其源码在Github上开源。使用CocoaPods可以节省设置和更新第三方开源库的时间并提高工作效率。
+2. CocoaPods的安装和使用
+2.1 安装
+在终端中依次输入以下两条命令：
+sudo gem install cocoapods
+
+pod setup
+2.2 使用
+2.2.1  基本使用
+1) 在Xcode中新建项目，例如PodsDemo，创建完成之后退出Xcode。打开终端，cd进入该文件夹所在目录
+2) 创建配置文件
+vi Podfile
+输入诸如以下内容：
+platform :ios, '7.0'
+pod 'AFNetworking'
+在配置文件中除添加了AFNetworking框架之外，还指定了iOS的项目运行的最低版本
+3) 输入:wq保存退出vi
+4) 安装 pod
+pod install
+5) 在Finder中双击打开PodsDemo.xcworkspace即可
+提示：在Xcode 5.0.2中，#import头文件时，没有智能提示，不过直接输入就能正常使用了。
+2.2.2  CocoaPods的其他功能
+1) 查找第三方库
+pod search json
+该命令可以搜索第三方库的完整名称，也可以输入相关关键字，例如pod search json
+2) 更新第三方库的引用
+打开Podfile配置文件，添加或删除配置文件中的第三方库引用，保存退出之后，运行：
+pod update
+或者
+pod install
+可以更新项目对第三方库的引用。
+有关CocoaPods使用的进一步信息，可以访问官方网站：http://docs.cocoapods.org/guides/getting_started.html
+3. 常用gem命令
+3.1 添加gem的源（为啥添加你懂得，在此感谢下老马）
+gem sources -a http://ruby.taobao.org/
+3.2 查看gem源
+gem sources –l
+3.3 gem自身升级
+sudo gem update –system
+3.4 查看当前版本
+gem –version
+3.5 清除过期的gem
+gem cleanup
+3.6 安装包
+gem install ruby
+3.7 卸载包
+gem uninstall ruby
+3.8 更新本地安装的包
+gem update
+3.9 列出本地安装的包
+gem list 
